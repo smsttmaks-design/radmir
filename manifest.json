@@ -1,0 +1,22 @@
+{
+  "name": "Калькулятор перекупа RADMIR CRMP",
+  "short_name": "Перекуп RADMIR",
+  "description": "Калькулятор перекупа RADMIR CRMP",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0c0a19",
+  "theme_color": "#0c0a19",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
