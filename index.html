@@ -398,6 +398,30 @@
             opacity: 1;
         }
 
+        .cloud-auth-card {
+            grid-column: 1 / -1;
+        }
+        .cloud-description {
+            color: #94a3b8;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            margin-bottom: 14px;
+        }
+        .cloud-login-fields {
+            margin-bottom: 12px;
+        }
+        .cloud-actions {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .cloud-account-label {
+            color: #94a3b8;
+            font-size: 0.75rem;
+            overflow-wrap: anywhere;
+        }
+
         .hidden { display: none !important; }
         .text-indigo { color: #a5b4fc; }
         .text-emerald { color: #34d399; }
@@ -438,7 +462,31 @@
 
     <!-- Main Grid -->
     <main class="main-grid">
-        
+
+        <!-- Облачная резервная копия -->
+        <section class="card cloud-auth-card">
+            <div class="card-header" style="margin-bottom: 10px;">
+                <h2>Облачная резервная копия</h2>
+                <span id="cloudStatus" class="badge badge-yellow">Не подключено</span>
+            </div>
+            <p class="cloud-description">Войди в свой аккаунт, чтобы сохранять портфель в облаке и восстанавливать его при потере данных браузера.</p>
+            <div id="cloudLoginFields" class="row cloud-login-fields">
+                <div class="field">
+                    <label for="cloudEmail">Электронная почта</label>
+                    <input type="email" id="cloudEmail" placeholder="your@email.com" autocomplete="username">
+                </div>
+                <div class="field">
+                    <label for="cloudPassword">Пароль</label>
+                    <input type="password" id="cloudPassword" placeholder="Пароль аккаунта" autocomplete="current-password">
+                </div>
+            </div>
+            <div class="cloud-actions">
+                <button type="button" id="cloudLoginBtn" class="btn btn-emerald">Войти и синхронизировать</button>
+                <button type="button" id="cloudLogoutBtn" class="btn btn-panel hidden">Выйти из аккаунта</button>
+                <span id="cloudAccountLabel" class="cloud-account-label"></span>
+            </div>
+        </section>
+
         <!-- Form Section -->
         <section class="card">
             <div class="card-header">
@@ -580,9 +628,21 @@
         <span id="toastMessage">Товар сохранен!</span>
     </div>
 
+    <!-- Клиент Supabase для облачной резервной копии -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
     <!-- Встроенные скрипты -->
     <script>
+        const SUPABASE_URL = 'https://sufxicgehvieuzeeenpt.supabase.co';
+        const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_j1AqagnSJLxJtfd4RBvQAg_h8Tqrcq3';
+        const supabaseClient = window.supabase
+            ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
+            : null;
+
         let dealsHistory = [];
+        let cloudUser = null;
+        let cloudReady = false;
+        let cloudSaveQueue = Promise.resolve();
 
         const buyInput = document.getElementById('buyInput');
         const expensesInput = document.getElementById('expensesInput');
@@ -605,7 +665,7 @@
         const totalProfitDisplay = document.getElementById('totalProfitDisplay');
         const totalActiveInvestDisplay = document.getElementById('totalActiveInvestDisplay');
 
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('yearSpan').textContent = new Date().getFullYear();
             loadStorage();
 
@@ -626,6 +686,11 @@
             formatInput(expensesInput);
             formatInput(targetProfitInput);
             calculateLive();
+
+            document.getElementById('cloudLoginBtn').addEventListener('click', cloudLogin);
+            document.getElementById('cloudLogoutBtn').addEventListener('click', cloudLogout);
+
+            await initializeCloud();
         });
 
         function formatInput(input) {
@@ -777,17 +842,198 @@
         }
 
         function saveStorage() {
+            // Сначала всегда сохраняем локально — калькулятор продолжает работать без интернета.
             localStorage.setItem('radmir_portfolio_v6', JSON.stringify(dealsHistory));
+
+            // Если пользователь вошёл, ставим облачное сохранение в очередь.
+            if (cloudUser && cloudReady && supabaseClient) {
+                const userId = cloudUser.id;
+                const snapshot = JSON.parse(JSON.stringify(dealsHistory));
+
+                cloudSaveQueue = cloudSaveQueue.then(async () => {
+                    const { error } = await supabaseClient
+                        .from('radmir_backup')
+                        .upsert({
+                            user_id: userId,
+                            deals: snapshot,
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: 'user_id' });
+
+                    if (error) {
+                        setCloudStatus('Ошибка облака: ' + error.message, true);
+                        console.error('Supabase backup error:', error);
+                    } else if (cloudUser && cloudUser.id === userId) {
+                        setCloudStatus('Облако синхронизировано');
+                    }
+                }).catch(error => {
+                    setCloudStatus('Ошибка облачного сохранения', true);
+                    console.error('Cloud save error:', error);
+                });
+            }
         }
 
         function loadStorage() {
             const saved = localStorage.getItem('radmir_portfolio_v6');
             if (saved) {
                 try {
-                    dealsHistory = JSON.parse(saved);
+                    const parsed = JSON.parse(saved);
+                    dealsHistory = Array.isArray(parsed) ? parsed : [];
                     renderHistory();
-                } catch(e) {}
+                } catch(e) {
+                    console.error('Не удалось прочитать локальную историю:', e);
+                }
             }
+        }
+
+        function setCloudStatus(message, isError = false) {
+            const status = document.getElementById('cloudStatus');
+            if (!status) return;
+            status.textContent = message;
+            status.className = isError ? 'badge badge-yellow' : 'badge badge-emerald';
+        }
+
+        function setCloudAuthUI(isLoggedIn) {
+            document.getElementById('cloudLoginFields').classList.toggle('hidden', isLoggedIn);
+            document.getElementById('cloudLoginBtn').classList.toggle('hidden', isLoggedIn);
+            document.getElementById('cloudLogoutBtn').classList.toggle('hidden', !isLoggedIn);
+            document.getElementById('cloudAccountLabel').textContent =
+                isLoggedIn && cloudUser ? 'Аккаунт: ' + cloudUser.email : '';
+        }
+
+        async function initializeCloud() {
+            if (!supabaseClient) {
+                setCloudStatus('Не удалось загрузить Supabase', true);
+                return;
+            }
+
+            setCloudStatus('Проверяем подключение…');
+            const { data, error } = await supabaseClient.auth.getSession();
+
+            if (error) {
+                setCloudStatus('Ошибка авторизации: ' + error.message, true);
+                return;
+            }
+
+            if (data.session) {
+                await handleCloudSession(data.session);
+            } else {
+                setCloudAuthUI(false);
+                setCloudStatus('Войди для резервного копирования');
+            }
+        }
+
+        async function cloudLogin() {
+            if (!supabaseClient) {
+                setCloudStatus('Supabase не загружен', true);
+                return;
+            }
+
+            const email = document.getElementById('cloudEmail').value.trim();
+            const password = document.getElementById('cloudPassword').value;
+
+            if (!email || !password) {
+                showToast('Введи почту и пароль');
+                return;
+            }
+
+            const button = document.getElementById('cloudLoginBtn');
+            button.disabled = true;
+            button.textContent = 'Входим…';
+            setCloudStatus('Выполняется вход…');
+
+            try {
+                const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                if (error) throw error;
+
+                document.getElementById('cloudPassword').value = '';
+                await handleCloudSession(data.session);
+                showToast('Облачная резервная копия подключена');
+            } catch (error) {
+                setCloudStatus('Ошибка входа: ' + error.message, true);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Войти и синхронизировать';
+            }
+        }
+
+        async function cloudLogout() {
+            if (!supabaseClient) return;
+
+            const { error } = await supabaseClient.auth.signOut();
+            if (error) {
+                setCloudStatus('Ошибка выхода: ' + error.message, true);
+                return;
+            }
+
+            cloudUser = null;
+            cloudReady = false;
+            setCloudAuthUI(false);
+            setCloudStatus('Локальное сохранение работает');
+            showToast('Вы вышли из облачного аккаунта');
+        }
+
+        async function handleCloudSession(session) {
+            cloudUser = session ? session.user : null;
+            cloudReady = false;
+
+            if (!cloudUser) {
+                setCloudAuthUI(false);
+                setCloudStatus('Войди для резервного копирования');
+                return;
+            }
+
+            setCloudAuthUI(true);
+            setCloudStatus('Загружаем резервную копию…');
+            await syncCloudBackup();
+        }
+
+        async function syncCloudBackup() {
+            if (!cloudUser || !supabaseClient) return;
+
+            const userId = cloudUser.id;
+            const localSaved = localStorage.getItem('radmir_portfolio_v6');
+            let localDeals = [];
+
+            if (localSaved) {
+                try {
+                    const parsed = JSON.parse(localSaved);
+                    localDeals = Array.isArray(parsed) ? parsed : [];
+                } catch (error) {
+                    console.error('Ошибка локальной истории:', error);
+                }
+            }
+
+            const { data, error } = await supabaseClient
+                .from('radmir_backup')
+                .select('deals')
+                .eq('user_id', userId)
+                .maybeSingle();
+
+            if (error) {
+                cloudReady = false;
+                setCloudStatus('Ошибка загрузки: ' + error.message, true);
+                console.error('Supabase backup load error:', error);
+                return;
+            }
+
+            const cloudDeals = data && Array.isArray(data.deals) ? data.deals : [];
+
+            // Объединяем локальную и облачную историю по ID, чтобы ничего не потерять.
+            const merged = new Map();
+            cloudDeals.forEach(deal => {
+                if (deal && deal.id !== undefined) merged.set(String(deal.id), deal);
+            });
+            localDeals.forEach(deal => {
+                if (deal && deal.id !== undefined) merged.set(String(deal.id), deal);
+            });
+
+            dealsHistory = Array.from(merged.values()).sort((a, b) => Number(b.id) - Number(a.id));
+            renderHistory();
+            cloudReady = true;
+
+            // Записываем объединённую историю в локальное хранилище и в облако.
+            saveStorage();
+            setCloudStatus('Синхронизируем историю…');
         }
 
         function renderHistory() {
