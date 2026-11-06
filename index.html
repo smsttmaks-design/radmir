@@ -1071,37 +1071,54 @@
         }
 
         function saveStorage() {
-            // Сначала всегда сохраняем локально — калькулятор продолжает работать без интернета.
+            // Локальные копии сохраняются независимо от наличия интернета.
             localStorage.setItem('radmir_portfolio_v6', JSON.stringify(dealsHistory));
             localStorage.setItem(MARKET_STORAGE_KEY, JSON.stringify(marketItems));
 
-            // Если пользователь вошёл, ставим облачное сохранение в очередь.
-            if (cloudUser && cloudReady && supabaseClient) {
-                const userId = cloudUser.id;
-                const snapshot = JSON.parse(JSON.stringify(dealsHistory));
-                const marketSnapshot = JSON.parse(JSON.stringify(marketItems));
+            if (!cloudUser || !cloudReady || !supabaseClient) return;
 
-                cloudSaveQueue = cloudSaveQueue.then(async () => {
-                    const { error } = await supabaseClient
-                        .from('radmir_backup')
-                        .upsert({
-                            user_id: userId,
-                            deals: snapshot,
-                            market_items: marketSnapshot,
-                            updated_at: new Date().toISOString()
-                        }, { onConflict: 'user_id' });
+            const userId = cloudUser.id;
+            const dealsSnapshot = JSON.parse(JSON.stringify(dealsHistory));
+            const marketSnapshot = JSON.parse(JSON.stringify(marketItems));
 
-                    if (error) {
-                        setCloudStatus('Ошибка облака: ' + error.message, true);
-                        console.error('Supabase backup error:', error);
-                    } else if (cloudUser && cloudUser.id === userId) {
-                        setCloudStatus('Облако синхронизировано');
-                    }
-                }).catch(error => {
-                    setCloudStatus('Ошибка облачного сохранения', true);
-                    console.error('Cloud save error:', error);
-                });
-            }
+            cloudSaveQueue = cloudSaveQueue.then(async () => {
+                // Покупки и продажи остаются в прежней таблице radmir_backup.
+                const backupResult = await supabaseClient
+                    .from('radmir_backup')
+                    .upsert({
+                        user_id: userId,
+                        deals: dealsSnapshot,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'user_id' });
+
+                if (backupResult.error) {
+                    setCloudStatus('Ошибка сохранения портфеля: ' + backupResult.error.message, true);
+                    console.error('Supabase backup error:', backupResult.error);
+                    return;
+                }
+
+                // Аналитика рынка хранится отдельно в radmir_market.
+                const marketResult = await supabaseClient
+                    .from('radmir_market')
+                    .upsert({
+                        user_id: userId,
+                        items: marketSnapshot,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'user_id' });
+
+                if (marketResult.error) {
+                    setCloudStatus('Портфель сохранён; ошибка аналитики: ' + marketResult.error.message, true);
+                    console.error('Supabase market error:', marketResult.error);
+                    return;
+                }
+
+                if (cloudUser && cloudUser.id === userId) {
+                    setCloudStatus('Облако синхронизировано');
+                }
+            }).catch(error => {
+                setCloudStatus('Ошибка облачного сохранения', true);
+                console.error('Cloud save queue error:', error);
+            });
         }
 
         function loadStorage() {
@@ -1235,54 +1252,359 @@
             if (!cloudUser || !supabaseClient) return;
 
             const userId = cloudUser.id;
-            const localSaved = localStorage.getItem('radmir_portfolio_v6');
-            let localDeals = [];
 
-            if (localSaved) {
+            // Сначала загружаем портфель из прежней таблицы.
+            const { data: backupData, error: backupError } = await supabaseClient
+                .from('radmir_backup')
+                .select('deals')
+                .eq('user_id', userId)
+                .maybeSingle();
+
+            if (backupError) {
+                cloudReady = false;
+                setCloudStatus('Ошибка загрузки портфеля: ' + backupError.message, true);
+                console.error('Supabase backup load error:', backupError);
+                return;
+            }
+
+            const localDealsSaved = localStorage.getItem('radmir_portfolio_v6');
+            let localDeals = [];
+            if (localDealsSaved) {
                 try {
-                    const parsed = JSON.parse(localSaved);
+                    const parsed = JSON.parse(localDealsSaved);
                     localDeals = Array.isArray(parsed) ? parsed : [];
                 } catch (error) {
                     console.error('Ошибка локальной истории:', error);
                 }
             }
 
-            const { data, error } = await supabaseClient
-                .from('radmir_backup')
-                .select('deals, market_items')
+            const cloudDeals = backupData && Array.isArray(backupData.deals) ? backupData.deals : [];
+            const dealMap = new Map();
+            cloudDeals.forEach(deal => {
+                if (deal && deal.id !== undefined) dealMap.set(String(deal.id), deal);
+            });
+            localDeals.forEach(deal => {
+                if (deal && deal.id !== undefined) dealMap.set(String(deal.id), deal);
+            });
+            dealsHistory = Array.from(dealMap.values())
+                .sort((a, b) => Number(b.id) - Number(a.id));
+            renderHistory();
+
+            // Аналитика загружается отдельно. Ошибка этой таблицы не блокирует вход и портфель.
+            const { data: marketData, error: marketError } = await supabaseClient
+                .from('radmir_market')
+                .select('items')
                 .eq('user_id', userId)
                 .maybeSingle();
 
-            if (error) {
-                cloudReady = false;
-                setCloudStatus('Ошибка загрузки: ' + error.message, true);
-                console.error('Supabase backup load error:', error);
-                return;
-            }
-
-            const cloudDeals = data && Array.isArray(data.deals) ? data.deals : [];
-
-            // Объединяем локальную и облачную историю по ID, чтобы ничего не потерять.
-            const merged = new Map();
-            cloudDeals.forEach(deal => {
-                if (deal && deal.id !== undefined) merged.set(String(deal.id), deal);
-            });
-            localDeals.forEach(deal => {
-                if (deal && deal.id !== undefined) merged.set(String(deal.id), deal);
-            });
-
-            dealsHistory = Array.from(merged.values()).sort((a, b) => Number(b.id) - Number(a.id));
-            renderHistory();
-
-            const cloudMarketItems = data && Array.isArray(data.market_items) ? data.market_items : [];
             const localMarketSaved = localStorage.getItem(MARKET_STORAGE_KEY);
             let localMarketItems = [];
             if (localMarketSaved) {
                 try {
-                    const parsedMarket = JSON.parse(localMarketSaved);
-                    localMarketItems = Array.isArray(parsedMarket) ? parsedMarket : [];
+                    const parsed = JSON.parse(localMarketSaved);
+                    localMarketItems = Array.isArray(parsed) ? parsed : [];
                 } catch (error) {
                     console.error('Ошибка локального анализа рынка:', error);
                 }
             }
-            marketItems = mer
+
+            if (!marketError) {
+                const cloudMarketItems = marketData && Array.isArray(marketData.items)
+                    ? marketData.items
+                    : [];
+                const marketMap = new Map();
+                cloudMarketItems.forEach(item => {
+                    if (item && item.id !== undefined) marketMap.set(String(item.id), item);
+                });
+                localMarketItems.forEach(item => {
+                    if (item && item.id !== undefined) marketMap.set(String(item.id), item);
+                });
+                marketItems = Array.from(marketMap.values())
+                    .sort((a, b) => Number(b.id) - Number(a.id));
+            } else {
+                // Даже если таблица аналитики ещё не настроена, авторизация и история продолжают работать.
+                marketItems = localMarketItems;
+                console.error('Supabase market load error:', marketError);
+            }
+
+            renderMarketItems();
+            cloudReady = true;
+
+            // Сохраняем объединённые данные локально и отправляем их в соответствующие таблицы.
+            saveStorage();
+
+            if (marketError) {
+                setCloudStatus('Портфель подключён; проверь таблицу radmir_market', true);
+            } else {
+                setCloudStatus('Облако синхронизировано');
+            }
+        }
+
+        function renderHistory() {
+            historyList.innerHTML = '';
+            historyCountBadge.textContent = dealsHistory.length;
+
+            if (dealsHistory.length === 0) {
+                historyList.innerHTML = '<div class="empty-notice"><p>В портфеле пока нет купленных товаров</p></div>';
+                totalProfitDisplay.textContent = '0 ₽';
+                totalActiveInvestDisplay.textContent = '0 ₽';
+                return;
+            }
+
+            let profitSum = 0;
+            let investSum = 0;
+
+            dealsHistory.forEach(deal => {
+                const totalCost = Number(deal.totalCost) || 0;
+                const netProfit = Number(deal.netProfit) || 0;
+                if (deal.hasSold) profitSum += netProfit;
+                else investSum += totalCost;
+
+                const card = document.createElement('div');
+                card.className = 'item-card';
+
+                const statusBadge = deal.hasSold
+                    ? '<span class="badge badge-emerald">Продано</span>'
+                    : '<span class="badge badge-yellow">В наличии</span>';
+
+                const actionArea = deal.hasSold
+                    ? `<span class="bold ${netProfit >= 0 ? 'text-emerald' : 'text-danger'}">${formatNum(netProfit)} ₽</span>`
+                    : `<button type="button" onclick="markAsSold(${Number(deal.id)})" class="btn btn-emerald">Продано</button>`;
+
+                card.innerHTML = `
+                    <div style="padding-right:8px;">
+                        <div style="display:flex; gap:6px; align-items:center; margin-bottom:2px; flex-wrap:wrap;">
+                            ${statusBadge}
+                            <span style="font-size:0.65rem; color:#a855f7;">${escapeHtml(deal.category || '')}</span>
+                        </div>
+                        <strong style="font-size:0.8rem; color:white;">${escapeHtml(deal.title || 'Без названия')}</strong>
+                        <p style="font-size:0.7rem; color:#94a3b8;">Вложения: ${formatCompact(totalCost)} ₽</p>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
+                        ${actionArea}
+                        <button type="button" onclick="deleteDeal(${Number(deal.id)})" class="btn-text text-danger" style="font-size:1.1rem; padding:0 4px;" title="Удалить">&times;</button>
+                    </div>
+                `;
+                historyList.appendChild(card);
+            });
+
+            totalProfitDisplay.textContent = `${formatNum(profitSum)} ₽`;
+            totalProfitDisplay.className = profitSum >= 0 ? 'text-emerald bold' : 'text-danger bold';
+            totalActiveInvestDisplay.textContent = `${formatNum(investSum)} ₽`;
+        }
+
+        function parseMarketPrice(value) {
+            const raw = String(value || '').trim().toLowerCase().replace(/\s+/g, '').replace(',', '.');
+            const match = raw.match(/^(\d+(?:\.\d+)?)(кк|kk|млн|m|к|k)?$/i);
+            if (!match) return 0;
+            const number = Number(match[1]);
+            const suffix = (match[2] || '').toLowerCase();
+            const multiplier = ['кк', 'kk', 'млн', 'm'].includes(suffix) ? 1000000
+                : ['к', 'k'].includes(suffix) ? 1000 : 1;
+            return Math.round(number * multiplier);
+        }
+
+        function addMarketItem(event) {
+            event.preventDefault();
+            const titleInput = document.getElementById('marketTitleInput');
+            const priceInput = document.getElementById('marketPriceInput');
+            const title = titleInput.value.trim();
+            const price = parseMarketPrice(priceInput.value);
+
+            if (!title || price <= 0) {
+                showToast('Укажи название и корректную цену');
+                return;
+            }
+
+            marketItems.unshift({
+                id: Date.now(),
+                title,
+                prices: [{ id: Date.now() + 1, value: price, createdAt: new Date().toISOString() }]
+            });
+
+            saveStorage();
+            renderMarketItems();
+            titleInput.value = '';
+            priceInput.value = '';
+            showToast('Товар добавлен в анализ рынка');
+        }
+
+        function addMarketPrice(event) {
+            const form = event.target.closest('.market-price-form');
+            if (!form) return;
+            event.preventDefault();
+
+            const itemId = form.dataset.itemId;
+            const input = form.querySelector('input[name="marketPrice"]');
+            const price = parseMarketPrice(input ? input.value : '');
+            const item = marketItems.find(entry => String(entry.id) === String(itemId));
+
+            if (!item || price <= 0) {
+                showToast('Введи корректную цену');
+                return;
+            }
+
+            if (!Array.isArray(item.prices)) item.prices = [];
+            item.prices.push({
+                id: Date.now(),
+                value: price,
+                createdAt: new Date().toISOString()
+            });
+
+            saveStorage();
+            renderMarketItems();
+            showToast('Цена добавлена');
+        }
+
+        function handleMarketListClick(event) {
+            const deletePriceButton = event.target.closest('[data-delete-price]');
+            if (deletePriceButton) {
+                const item = marketItems.find(entry => String(entry.id) === String(deletePriceButton.dataset.itemId));
+                if (!item) return;
+                item.prices = (item.prices || []).filter(price => String(price.id) !== String(deletePriceButton.dataset.deletePrice));
+                saveStorage();
+                renderMarketItems();
+                return;
+            }
+
+            const deleteItemButton = event.target.closest('[data-delete-item]');
+            if (deleteItemButton) {
+                marketItems = marketItems.filter(item => String(item.id) !== String(deleteItemButton.dataset.deleteItem));
+                saveStorage();
+                renderMarketItems();
+                showToast('Товар удалён из анализа');
+            }
+        }
+
+        function renderMarketItems() {
+            const container = document.getElementById('marketItemsList');
+            if (!container) return;
+
+            if (!marketItems.length) {
+                container.innerHTML = '<div class="market-empty">Пока нет записей. Добавь первый товар и его цену.</div>';
+                return;
+            }
+
+            container.innerHTML = marketItems.map(item => {
+                const prices = Array.isArray(item.prices) ? item.prices : [];
+                const values = prices.map(price => Number(price.value) || 0).filter(value => value > 0);
+                const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+                const min = values.length ? Math.min(...values) : 0;
+                const max = values.length ? Math.max(...values) : 0;
+                const recommended = average * 0.85;
+
+                return `
+                    <article class="market-item">
+                        <div class="market-item-top">
+                            <div class="market-item-title">${escapeHtml(item.title || 'Без названия')}</div>
+                            <button type="button" class="market-delete-item" data-delete-item="${String(item.id)}" title="Удалить товар">✕</button>
+                        </div>
+                        <div class="market-stats">
+                            <div class="market-stat"><span class="market-stat-label">Средняя</span><span class="market-stat-value">${formatNum(average)} ₽</span></div>
+                            <div class="market-stat"><span class="market-stat-label">Минимум</span><span class="market-stat-value">${formatNum(min)} ₽</span></div>
+                            <div class="market-stat"><span class="market-stat-label">Максимум</span><span class="market-stat-value">${formatNum(max)} ₽</span></div>
+                        </div>
+                        <div class="market-recommendation">
+                            <span>Рекомендуемая закупка (−15%)</span>
+                            <strong>${formatNum(recommended)} ₽</strong>
+                        </div>
+                        <div class="market-prices-title">Записанные цены (${values.length})</div>
+                        <div class="market-price-list">
+                            ${prices.map(price => `
+                                <span class="market-price-chip">
+                                    ${formatNum(Number(price.value) || 0)} ₽
+                                    <button type="button" class="market-delete-price" data-item-id="${String(item.id)}" data-delete-price="${String(price.id)}" title="Удалить цену">×</button>
+                                </span>
+                            `).join('') || '<span class="sub-label">Цен пока нет</span>'}
+                        </div>
+                        <form class="market-price-form" data-item-id="${String(item.id)}">
+                            <input type="text" name="marketPrice" placeholder="Добавить цену, например 7.3кк" inputmode="decimal" required>
+                            <button type="submit" class="btn btn-emerald">Добавить</button>
+                        </form>
+                    </article>
+                `;
+            }).join('');
+        }
+
+        function exportCSV() {
+            if (!dealsHistory.length) return alert('Портфель пуст');
+            let csv = 'data:text/csv;charset=utf-8,\uFEFFКатегория;Название;Покупка;Расходы;Себестоимость;Продажа;Статус;Чистый_Профит\n';
+            dealsHistory.forEach(deal => {
+                const row = [
+                    deal.category || '',
+                    deal.title || '',
+                    Number(deal.buyPrice) || 0,
+                    Number(deal.expenses) || 0,
+                    Number(deal.totalCost) || 0,
+                    Number(deal.sellPrice) || 0,
+                    deal.hasSold ? 'Продано' : 'В наличии',
+                    Number(deal.netProfit) || 0
+                ].map(value => `"${String(value).replace(/"/g, '""')}"`).join(';');
+                csv += row + '\n';
+            });
+            const link = document.createElement('a');
+            link.href = encodeURI(csv);
+            link.download = 'Radmir_Portfolio.csv';
+            link.click();
+        }
+
+        function importCSV(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = loadedEvent => {
+                const lines = String(loadedEvent.target.result || '').split(/\r?\n/);
+                let imported = 0;
+
+                for (let index = 1; index < lines.length; index++) {
+                    const line = lines[index].trim();
+                    if (!line) continue;
+                    const columns = line.split(';').map(value => value.replace(/^"|"$/g, '').replace(/""/g, '"'));
+                    if (columns.length < 6) continue;
+
+                    const sellPrice = parseNum(columns[5]);
+                    const totalCost = parseNum(columns[4]);
+                    dealsHistory.push({
+                        id: Date.now() + index,
+                        category: columns[0],
+                        title: columns[1],
+                        buyPrice: parseNum(columns[2]),
+                        expenses: parseNum(columns[3]),
+                        totalCost,
+                        sellPrice,
+                        hasSold: columns[6] ? columns[6].includes('Продано') : sellPrice > 0,
+                        netProfit: columns[7] !== undefined ? parseNum(columns[7]) : sellPrice - totalCost
+                    });
+                    imported++;
+                }
+
+                saveStorage();
+                renderHistory();
+                showToast(imported ? `Импортировано записей: ${imported}` : 'В CSV не найдено записей');
+                event.target.value = '';
+            };
+            reader.readAsText(file);
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            const messageElement = document.getElementById('toastMessage');
+            if (!toast || !messageElement) return;
+            messageElement.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            }[character]));
+        }
+    </script>
+</body>
+</html>
