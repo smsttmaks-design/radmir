@@ -452,6 +452,172 @@
             overflow-wrap: anywhere;
         }
 
+
+        /* Анализ рынка — отдельный блок, не затрагивает стили портфеля */
+        .market-card {
+            grid-column: 1 / -1;
+        }
+        .market-description {
+            color: #94a3b8;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            margin: -6px 0 16px;
+        }
+        .market-add-form {
+            display: grid;
+            grid-template-columns: minmax(0, 1.5fr) minmax(140px, 1fr) auto;
+            gap: 10px;
+            align-items: end;
+            margin-bottom: 16px;
+        }
+        .market-add-form .field {
+            min-width: 0;
+        }
+        .market-add-form .btn {
+            min-height: 42px;
+            white-space: nowrap;
+        }
+        .market-items {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+            gap: 12px;
+        }
+        .market-item {
+            min-width: 0;
+            background: rgba(31, 25, 63, 0.72);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 14px;
+        }
+        .market-item-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .market-item-title {
+            color: white;
+            font-size: 0.9rem;
+            font-weight: 700;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
+        .market-delete-item, .market-delete-price {
+            border: 0;
+            background: transparent;
+            color: #f87171;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .market-stats {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 7px;
+            margin-bottom: 10px;
+        }
+        .market-stat {
+            min-width: 0;
+            padding: 8px 6px;
+            border-radius: 9px;
+            background: var(--input-bg);
+            text-align: center;
+        }
+        .market-stat-label {
+            display: block;
+            color: #94a3b8;
+            font-size: 0.62rem;
+            margin-bottom: 4px;
+        }
+        .market-stat-value {
+            display: block;
+            color: white;
+            font-size: 0.76rem;
+            font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+        .market-recommendation {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 10px;
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            border-radius: 10px;
+            background: rgba(16, 185, 129, 0.08);
+            margin-bottom: 12px;
+        }
+        .market-recommendation span:first-child {
+            color: #a7f3d0;
+            font-size: 0.72rem;
+        }
+        .market-recommendation strong {
+            color: #34d399;
+            font-size: 0.9rem;
+            text-align: right;
+        }
+        .market-prices-title {
+            color: #94a3b8;
+            font-size: 0.7rem;
+            margin-bottom: 7px;
+        }
+        .market-price-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+        .market-price-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 7px 5px 9px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: #e2e8f0;
+            background: var(--input-bg);
+            font-size: 0.72rem;
+        }
+        .market-delete-price {
+            font-size: 0.95rem;
+            line-height: 1;
+            padding: 0 1px;
+        }
+        .market-price-form {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 7px;
+        }
+        .market-price-form input {
+            min-width: 0;
+            padding: 9px 10px;
+            font-size: 0.8rem;
+        }
+        .market-price-form .btn {
+            padding: 8px 10px;
+        }
+        .market-empty {
+            grid-column: 1 / -1;
+            padding: 24px 12px;
+            border: 1px dashed var(--border-color);
+            border-radius: 12px;
+            color: #64748b;
+            text-align: center;
+            font-size: 0.8rem;
+        }
+        @media (max-width: 639px) {
+            .market-add-form {
+                grid-template-columns: 1fr 1fr;
+            }
+            .market-add-form .field:first-child {
+                grid-column: 1 / -1;
+            }
+            .market-add-form .btn {
+                grid-column: 1 / -1;
+                width: 100%;
+            }
+        }
+
         .hidden { display: none !important; }
         .text-indigo { color: #a5b4fc; }
         .text-emerald { color: #34d399; }
@@ -514,6 +680,33 @@
                 <button type="button" id="cloudLoginBtn" class="btn btn-emerald">Войти и синхронизировать</button>
                 <button type="button" id="cloudLogoutBtn" class="btn btn-panel hidden">Выйти из аккаунта</button>
                 <span id="cloudAccountLabel" class="cloud-account-label"></span>
+            </div>
+        </section>
+
+        <!-- Анализ рынка: отдельный список наблюдаемых цен -->
+        <section class="card market-card">
+            <div class="card-header" style="margin-bottom: 10px;">
+                <h2>Анализ рынка</h2>
+                <span class="badge badge-count">−15% от средней</span>
+            </div>
+            <p class="market-description">
+                Добавляй товары и цены, которые встречаешь в продаже. Средняя цена и рекомендуемая закупка рассчитываются автоматически.
+            </p>
+
+            <form id="marketAddForm" class="market-add-form">
+                <div class="field">
+                    <label for="marketTitleInput">Название товара</label>
+                    <input type="text" id="marketTitleInput" placeholder="Например: BMW M5 F90 FT" maxlength="100" required>
+                </div>
+                <div class="field">
+                    <label for="marketPriceInput">Увиденная цена</label>
+                    <input type="text" id="marketPriceInput" placeholder="Например: 7.3кк" inputmode="decimal" required>
+                </div>
+                <button type="submit" class="btn btn-emerald">Добавить товар</button>
+            </form>
+
+            <div id="marketItemsList" class="market-items">
+                <div class="market-empty">Пока нет записей. Добавь первый товар и его цену.</div>
             </div>
         </section>
 
@@ -670,6 +863,8 @@
             : null;
 
         let dealsHistory = [];
+        let marketItems = [];
+        const MARKET_STORAGE_KEY = 'radmir_market_v1';
         let cloudUser = null;
         let cloudReady = false;
         let cloudSaveQueue = Promise.resolve();
@@ -712,6 +907,10 @@
             document.getElementById('clearHistoryBtn').addEventListener('click', clearHistory);
             document.getElementById('exportBtn').addEventListener('click', exportCSV);
             document.getElementById('importFile').addEventListener('change', importCSV);
+
+            document.getElementById('marketAddForm').addEventListener('submit', addMarketItem);
+            document.getElementById('marketItemsList').addEventListener('submit', addMarketPrice);
+            document.getElementById('marketItemsList').addEventListener('click', handleMarketListClick);
 
             formatInput(expensesInput);
             formatInput(targetProfitInput);
@@ -874,11 +1073,13 @@
         function saveStorage() {
             // Сначала всегда сохраняем локально — калькулятор продолжает работать без интернета.
             localStorage.setItem('radmir_portfolio_v6', JSON.stringify(dealsHistory));
+            localStorage.setItem(MARKET_STORAGE_KEY, JSON.stringify(marketItems));
 
             // Если пользователь вошёл, ставим облачное сохранение в очередь.
             if (cloudUser && cloudReady && supabaseClient) {
                 const userId = cloudUser.id;
                 const snapshot = JSON.parse(JSON.stringify(dealsHistory));
+                const marketSnapshot = JSON.parse(JSON.stringify(marketItems));
 
                 cloudSaveQueue = cloudSaveQueue.then(async () => {
                     const { error } = await supabaseClient
@@ -886,6 +1087,7 @@
                         .upsert({
                             user_id: userId,
                             deals: snapshot,
+                            market_items: marketSnapshot,
                             updated_at: new Date().toISOString()
                         }, { onConflict: 'user_id' });
 
@@ -913,6 +1115,18 @@
                     console.error('Не удалось прочитать локальную историю:', e);
                 }
             }
+
+            const savedMarket = localStorage.getItem(MARKET_STORAGE_KEY);
+            if (savedMarket) {
+                try {
+                    const parsedMarket = JSON.parse(savedMarket);
+                    marketItems = Array.isArray(parsedMarket) ? parsedMarket : [];
+                } catch(e) {
+                    console.error('Не удалось прочитать анализ рынка:', e);
+                    marketItems = [];
+                }
+            }
+            renderMarketItems();
         }
 
         function setCloudStatus(message, isError = false) {
@@ -1035,7 +1249,7 @@
 
             const { data, error } = await supabaseClient
                 .from('radmir_backup')
-                .select('deals')
+                .select('deals, market_items')
                 .eq('user_id', userId)
                 .maybeSingle();
 
@@ -1059,117 +1273,16 @@
 
             dealsHistory = Array.from(merged.values()).sort((a, b) => Number(b.id) - Number(a.id));
             renderHistory();
-            cloudReady = true;
 
-            // Записываем объединённую историю в локальное хранилище и в облако.
-            saveStorage();
-            setCloudStatus('Синхронизируем историю…');
-        }
-
-        function renderHistory() {
-            historyList.innerHTML = '';
-            historyCountBadge.textContent = dealsHistory.length;
-
-            if (dealsHistory.length === 0) {
-                historyList.innerHTML = '<div class="empty-notice"><p>В портфеле пока нет купленных товаров</p></div>';
-                totalProfitDisplay.textContent = '0 ₽';
-                totalActiveInvestDisplay.textContent = '0 ₽';
-                return;
-            }
-
-            let profitSum = 0;
-            let investSum = 0;
-
-            dealsHistory.forEach(deal => {
-                if (deal.hasSold) profitSum += deal.netProfit;
-                else investSum += deal.totalCost;
-
-                const card = document.createElement('div');
-                card.className = 'item-card';
-
-                const statusBadge = deal.hasSold 
-                    ? '<span class="badge badge-emerald">Продано</span>' 
-                    : '<span class="badge badge-yellow">В наличии</span>';
-
-                const actionArea = deal.hasSold 
-                    ? `<span class="bold ${deal.netProfit >= 0 ? 'text-emerald' : 'text-danger'}">${formatNum(deal.netProfit)} ₽</span>`
-                    : `<button onclick="markAsSold(${deal.id})" class="btn btn-emerald">Продано</button>`;
-
-                card.innerHTML = `
-                    <div style="overflow: hidden; padding-right: 8px;">
-                        <div style="display:flex; gap:6px; align-items:center; margin-bottom:2px;">
-                            ${statusBadge}
-                            <span style="font-size:0.65rem; color:#a855f7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(deal.category)}</span>
-                        </div>
-                        <strong style="font-size:0.8rem; color:white; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(deal.title)}</strong>
-                        <p style="font-size:0.7rem; color:#94a3b8;">Вложения: ${formatCompact(deal.totalCost)} ₽</p>
-                    </div>
-                    <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
-                        ${actionArea}
-                        <button onclick="deleteDeal(${deal.id})" class="btn-text text-danger" style="font-size:1.1rem; padding: 0 4px;" title="Удалить">&times;</button>
-                    </div>
-                `;
-
-                historyList.appendChild(card);
-            });
-
-            totalProfitDisplay.textContent = `${formatNum(profitSum)} ₽`;
-            totalProfitDisplay.className = profitSum >= 0 ? "text-emerald bold" : "text-danger bold";
-            totalActiveInvestDisplay.textContent = `${formatNum(investSum)} ₽`;
-        }
-
-        function exportCSV() {
-            if (!dealsHistory.length) return alert('Портфель пуст');
-            let csv = "data:text/csv;charset=utf-8,\uFEFFКатегория;Название;Покупка;Расходы;Себестоимость;Продажа;Статус;Чистый_Профит\n";
-            dealsHistory.forEach(d => {
-                csv += `"${d.category}";"${d.title}";${d.buyPrice};${d.expenses};${d.totalCost};${d.sellPrice || 0};"${d.hasSold ? 'Продано' : 'В наличии'}";${d.netProfit || 0}\n`;
-            });
-            const link = document.createElement('a');
-            link.href = encodeURI(csv);
-            link.download = `Radmir_Portfolio.csv`;
-            link.click();
-        }
-
-        function importCSV(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (evt) => {
-                const lines = evt.target.result.split('\n');
-                for (let i = 1; i < lines.length; i++) {
-                    const cols = lines[i].split(';');
-                    if (cols.length >= 6) {
-                        dealsHistory.push({
-                            id: Date.now() + i,
-                            category: cols[0].replace(/"/g, ''),
-                            title: cols[1].replace(/"/g, ''),
-                            buyPrice: parseNum(cols[2]),
-                            expenses: parseNum(cols[3]),
-                            totalCost: parseNum(cols[4]),
-                            sellPrice: parseNum(cols[5]),
-                            hasSold: cols[6] ? cols[6].includes('Продано') : parseNum(cols[5]) > 0,
-                            netProfit: parseNum(cols[7])
-                        });
-                    }
+            const cloudMarketItems = data && Array.isArray(data.market_items) ? data.market_items : [];
+            const localMarketSaved = localStorage.getItem(MARKET_STORAGE_KEY);
+            let localMarketItems = [];
+            if (localMarketSaved) {
+                try {
+                    const parsedMarket = JSON.parse(localMarketSaved);
+                    localMarketItems = Array.isArray(parsedMarket) ? parsedMarket : [];
+                } catch (error) {
+                    console.error('Ошибка локального анализа рынка:', error);
                 }
-                saveStorage();
-                renderHistory();
-                showToast('Портфель импортирован!');
-                e.target.value = '';
-            };
-            reader.readAsText(file);
-        }
-
-        function showToast(msg) {
-            const toast = document.getElementById('toast');
-            document.getElementById('toastMessage').textContent = msg;
-            toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 2000);
-        }
-
-        function escapeHtml(str) {
-            return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
-        }
-    </script>
-</body>
-</html>
+            }
+            marketItems = mer
